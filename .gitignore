@@ -1,0 +1,23 @@
+# Python & env
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Model artifacts (besar, jangan push ke git biasa — pakai Git LFS / Drive)
+models/*.pkl
+models/*.h5
+models/metrics.json
+!models/.gitkeep
+
+# Data (dataset utama BRFSS diizinkan masuk repo, ~22MB)
+*.csv
+!diabetes_binary_health_indicators_BRFSS2015.csv
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

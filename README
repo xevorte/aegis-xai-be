@@ -1,0 +1,90 @@
+# 🛡️ Aegis XAI - Health Screening API
+
+> **Version:** 1.1.0  
+> **Description:** Backend Machine Learning Multi-Model & Explainable AI (XAI)
+
+Dokumentasi resmi backend **Aegis XAI**, sebuah layanan REST API berbasis **FastAPI (Python)** yang mengintegrasikan 5 algoritma Machine Learning & Deep Learning untuk skrining risiko kesehatan mandiri (penyakit diabetes) berbasis data tabular. Layanan ini dilengkapi dengan modul **Explainable AI (XAI)** berbasis **SHAP** untuk memberikan transparansi dan penjelasan naratif di balik keputusan prediksi model.
+
+---
+
+# Masuk ke folder proyek dulu (wajib, agar module `main` ditemukan)
+cd "D:\me\Kuliah 5\aegis-be"
+
+# Buat virtual environment
+python -m venv venv
+
+# Aktifkan virtual environment
+# Untuk Windows:
+venv\Scripts\activate
+# Untuk Mac/Linux:
+source venv/bin/activate
+
+# Install semua kebutuhan library
+pip install -r requirements.txt
+
+# Melatih model (menghasilkan .pkl/.h5 + models/metrics.json)
+python train.py
+
+# Menjalankan server (kedua perintah valid, pilih salah satu)
+python -m uvicorn main:app --reload --port 8000
+# atau:
+uvicorn main:app --reload --port 8000
+
+# Cek kesehatan & dokumentasi:
+# http://localhost:8000/health
+# http://localhost:8000/docs
+
+---
+
+## 📌 Fitur Utama
+
+- **Multi-Model Inference Engine:** Eksekusi 5 algoritma klasifikasi secara bersamaan pada *single payload*:
+  1. **Support Vector Machine (SVM)**
+  2. **Decision Tree**
+  3. **Random Forest**
+  4. **Gradient Boosting (XGBoost)**
+  5. **1D Convolutional Neural Network (1D-CNN)**
+- **Consensus & Voting System:** Menghitung skor konsensus, rata-rata tingkat risiko, dan *voting* mayoritas dari kelima algoritma.
+- **Explainable AI (XAI) via SHAP:** Menganalisis kontribusi variabel (*feature importance*) dan menerjemahkannya ke dalam kalimat rekomendasi tindakan pencegahan berbasis Bahasa Indonesia.
+- **Siap Integrasi Frontend (Next.js):** Dilengkapi konfigurasi CORS dan endpoint berlatensi rendah untuk mendukung antarmuka interaktif seperti *What-If Analysis Slider*.
+- **Dataset Scale Ready:** Dilatih menggunakan *Diabetes Health Indicators Dataset* dari CDC BRFSS (253.680 baris data tabular).
+
+---
+
+## 🏗️ Arsitektur & Tech Stack
+
+- **Framework API:** FastAPI & Uvicorn
+- **Pengolahan Data:** Pandas, NumPy, Scikit-Learn
+- **Machine Learning & Deep Learning:** Scikit-Learn, XGBoost, TensorFlow / Keras (1D-CNN)
+- **Explainable AI (XAI):** SHAP (SHapley Additive exPlanations)
+- **Model Serialization:** Joblib (`.pkl`), HDF5 (`.h5`)
+
+---
+
+## 📁 Struktur Direktori Proyek
+
+```text
+aegis-xai-backend/
+├── diabetes_binary_health_indicators_BRFSS2015.csv  # Dataset Tabular dari Kaggle
+├── models/                                              # File Artifak Model & Explainer
+│   ├── scaler.pkl
+│   ├── model_svm.pkl
+│   ├── model_dt.pkl
+│   ├── model_rf.pkl
+│   ├── model_xgb.pkl
+│   ├── model_cnn1d.h5
+│   ├── shap_explainer.pkl
+│   └── metrics.json                                     # Akurasi/Precision/Recall/F1 per model
+├── main.py                                             # Entry Point FastAPI & Endpoint REST
+├── train.py                                            # Script Training 5 Model & SHAP Explainer
+├── requirements.txt                                    # Daftar Dependensi Python (pinned)
+├── tests/test_predict.py                               # Smoke test API
+└── README.md                                           # Dokumentasi Proyek
+
+## 🔌 Kontrak Endpoint
+
+- `GET /health` → status + daftar model termuat
+- `POST /api/predict` → diagnosis full (5 model + SHAP XAI), untuk hasil akhir & PDF
+- `POST /api/predict-lite` → 5 model tanpa SHAP, untuk slider What-If (<100ms)
+- `GET /api/metrics` → akurasi/precision/recall/F1 + confusion matrix (butuh `train.py` terbaru)
+- `GET /docs` → Swagger UI interaktif

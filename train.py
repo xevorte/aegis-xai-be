@@ -9,6 +9,7 @@ read only for the final report.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import joblib
@@ -84,6 +85,14 @@ def choose_threshold(y_true: pd.Series, probabilities: np.ndarray) -> float:
     return round(float(thresholds[int(np.argmax(scores))]), 2)
 
 
+def finite_or_none(value: float | int | None) -> float | int | None:
+    """Keep metrics.json strict JSON-compliant when a scorer returns NaN/inf."""
+    if value is None:
+        return None
+    numeric_value = float(value)
+    return round(numeric_value, 4) if math.isfinite(numeric_value) else None
+
+
 def score_block(name: str, y_true: pd.Series, probabilities: np.ndarray, threshold: float) -> dict:
     predictions = (probabilities >= threshold).astype(int)
     try:
@@ -144,7 +153,7 @@ def tune_model(name: str, estimator, parameter_grid: dict, X_train: pd.DataFrame
     print(f"✅ {name}: best PR-AUC CV={search.best_score_:.4f}, params={search.best_params_}")
     return search.best_estimator_, {
         "best_params": search.best_params_,
-        "best_cv_pr_auc": round(float(search.best_score_), 4),
+        "best_cv_pr_auc": finite_or_none(search.best_score_),
         "cv_folds": CV_SPLITS,
         "sampling_strategy": SMOTE_SAMPLING_STRATEGY,
     }
@@ -306,7 +315,7 @@ metrics_payload = {
     "scope": "Core diabetes experiment: Random Forest, XGBoost, and 1D-CNN.",
 }
 with open(MODELS_DIR / "metrics.json", "w", encoding="utf-8") as handle:
-    json.dump(metrics_payload, handle, indent=2)
+    json.dump(metrics_payload, handle, indent=2, allow_nan=False)
 
 print(f"🏆 Best model (validation PR-AUC): {best_display_name}")
 print("✅ Training selesai. Model inti, metrik, kalibrasi, dan SHAP tersimpan di models/.")

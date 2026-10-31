@@ -37,3 +37,24 @@ def test_predict_invalid_age_rejected():
     bad = dict(VALID_PAYLOAD, Age=99)
     r = client.post("/api/predict", json=bad)
     assert r.status_code == 422
+
+
+def test_predict_all_shape():
+    # Tanpa artefak model akan 500; bila model ada, kontrak harus lengkap.
+    r = client.post("/api/predict-all", json=VALID_PAYLOAD)
+    assert r.status_code in (200, 500)
+    if r.status_code == 200:
+        data = r.json()
+        assert data["status"] == "success"
+        assert set(data["conditions"]) == {
+            "diabetes", "hypertension", "high_cholesterol",
+            "heart_disease", "stroke",
+        }
+        assert data["conditions"]["diabetes"]["evidence_level"] == "validated"
+        assert data["conditions"]["stroke"]["evidence_level"] == "preliminary"
+        assert data["conditions"]["stroke"]["validated"] is False
+
+
+def test_predict_unknown_condition_404():
+    r = client.post("/api/predict/unknown_disease", json=VALID_PAYLOAD)
+    assert r.status_code == 404

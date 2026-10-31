@@ -1,90 +1,59 @@
-# 🛡️ Aegis XAI - Health Screening API
+# Aegis XAI Backend
 
-> **Version:** 1.1.0  
-> **Description:** Backend Machine Learning Multi-Model & Explainable AI (XAI)
+Backend FastAPI untuk skrining awal diabetes berbasis Diabetes Health Indicators Dataset dari CDC BRFSS. Eksperimen utama membandingkan tiga model: Random Forest, XGBoost, dan 1D-CNN. Sistem menyediakan skor model, penjelasan SHAP, simulasi counterfactual terbatas, dan metrik evaluasi internal.
 
-Dokumentasi resmi backend **Aegis XAI**, sebuah layanan REST API berbasis **FastAPI (Python)** yang mengintegrasikan 5 algoritma Machine Learning & Deep Learning untuk skrining risiko kesehatan mandiri (penyakit diabetes) berbasis data tabular. Layanan ini dilengkapi dengan modul **Explainable AI (XAI)** berbasis **SHAP** untuk memberikan transparansi dan penjelasan naratif di balik keputusan prediksi model.
+Runtime yang didukung untuk konfigurasi dependency saat ini adalah **Python 3.13 pada Windows x64**.
 
----
+## Menjalankan
 
-# Masuk ke folder proyek dulu (wajib, agar module `main` ditemukan)
+```powershell
 cd "D:\me\Kuliah 5\aegis-be"
-
-# Buat virtual environment
 python -m venv venv
-
-# Aktifkan virtual environment
-# Untuk Windows:
 venv\Scripts\activate
-# Untuk Mac/Linux:
-source venv/bin/activate
-
-# Install semua kebutuhan library
 pip install -r requirements.txt
-
-# Melatih model (menghasilkan .pkl/.h5 + models/metrics.json)
 python train.py
-
-# Menjalankan server (kedua perintah valid, pilih salah satu)
 python -m uvicorn main:app --reload --port 8000
-# atau:
-uvicorn main:app --reload --port 8000
+```
 
-# Cek kesehatan & dokumentasi:
-# http://localhost:8000/health
-# http://localhost:8000/docs
+Training harus dijalankan ulang setelah perubahan metodologi. Proses menghasilkan artefak di `models/`, termasuk model terkalibrasi, scaler, explainer SHAP, dan `metrics.json`.
 
----
+## Protokol penelitian
 
-## 📌 Fitur Utama
+Dataset dibagi secara stratified menjadi 70% training, 15% validation, dan 15% test. Test dikunci sampai seluruh pemilihan model selesai. Pada data training, RF dan XGBoost dituning menggunakan GridSearch dengan Stratified 5-Fold Cross Validation. SMOTENC berada di dalam pipeline sehingga hanya diterapkan pada bagian training setiap fold. Fitur biner dan ordinal diperlakukan sebagai categorical; BMI, MentHlth, dan PhysHlth diperlakukan sebagai continuous.
 
-- **Multi-Model Inference Engine:** Eksekusi 5 algoritma klasifikasi secara bersamaan pada *single payload*:
-  1. **Support Vector Machine (SVM)**
-  2. **Decision Tree**
-  3. **Random Forest**
-  4. **Gradient Boosting (XGBoost)**
-  5. **1D Convolutional Neural Network (1D-CNN)**
-- **Consensus & Voting System:** Menghitung skor konsensus, rata-rata tingkat risiko, dan *voting* mayoritas dari kelima algoritma.
-- **Explainable AI (XAI) via SHAP:** Menganalisis kontribusi variabel (*feature importance*) dan menerjemahkannya ke dalam kalimat rekomendasi tindakan pencegahan berbasis Bahasa Indonesia.
-- **Siap Integrasi Frontend (Next.js):** Dilengkapi konfigurasi CORS dan endpoint berlatensi rendah untuk mendukung antarmuka interaktif seperti *What-If Analysis Slider*.
-- **Dataset Scale Ready:** Dilatih menggunakan *Diabetes Health Indicators Dataset* dari CDC BRFSS (253.680 baris data tabular).
+Model dipilih berdasarkan PR-AUC validation. Threshold dipilih pada validation dengan memaksimalkan F1, lalu dipakai untuk pelaporan test. RF dan XGBoost dikalibrasi dengan sigmoid `CalibratedClassifierCV`. Metrik yang disimpan mencakup accuracy, precision, recall, F1, ROC-AUC, PR-AUC, Brier score, ECE, confusion matrix, dan threshold.
 
----
+1D-CNN dilatih pada data training yang diproses SMOTENC dan dievaluasi pada validation/test yang tidak disentuh SMOTENC. Model ini menjadi pembanding deep learning, sedangkan model terbaik ditentukan oleh PR-AUC validation.
 
-## 🏗️ Arsitektur & Tech Stack
+## Endpoint
 
-- **Framework API:** FastAPI & Uvicorn
-- **Pengolahan Data:** Pandas, NumPy, Scikit-Learn
-- **Machine Learning & Deep Learning:** Scikit-Learn, XGBoost, TensorFlow / Keras (1D-CNN)
-- **Explainable AI (XAI):** SHAP (SHapley Additive exPlanations)
-- **Model Serialization:** Joblib (`.pkl`), HDF5 (`.h5`)
+- `GET /health` — status artefak model dan model terbaik.
+- `POST /api/predict` — tiga model, ensemble rata-rata, voting, dan SHAP.
+- `POST /api/predict-lite` — tiga model tanpa SHAP untuk What-If.
+- `POST /api/predict-best` — satu model terbaik berdasarkan PR-AUC validation.
+- `POST /api/counterfactual` — simulasi perubahan minimal pada fitur yang dapat diubah.
+- `POST /api/predict-all` — diabetes internal evaluation dan empat kondisi tambahan preliminary bila artefaknya tersedia.
+- `POST /api/predict/{condition}` — satu kondisi.
+- `GET /api/metrics` — metadata protokol dan metrik validation/test.
+- `GET /docs` — Swagger UI.
 
----
+Counterfactual hanya menguji perubahan satu fitur pada ruang terbatas, seperti BMI, aktivitas fisik, konsumsi buah/sayur, merokok, alkohol, dan indikator kondisi harian. Responsnya adalah simulasi model, bukan rekomendasi medis atau hubungan sebab-akibat.
 
-## 📁 Struktur Direktori Proyek
+## Struktur utama
 
 ```text
-aegis-xai-backend/
-├── diabetes_binary_health_indicators_BRFSS2015.csv  # Dataset Tabular dari Kaggle
-├── models/                                              # File Artifak Model & Explainer
-│   ├── scaler.pkl
-│   ├── model_svm.pkl
-│   ├── model_dt.pkl
-│   ├── model_rf.pkl
-│   ├── model_xgb.pkl
-│   ├── model_cnn1d.h5
-│   ├── shap_explainer.pkl
-│   └── metrics.json                                     # Akurasi/Precision/Recall/F1 per model
-├── main.py                                             # Entry Point FastAPI & Endpoint REST
-├── train.py                                            # Script Training 5 Model & SHAP Explainer
-├── requirements.txt                                    # Daftar Dependensi Python (pinned)
-├── tests/test_predict.py                               # Smoke test API
-└── README.md                                           # Dokumentasi Proyek
+diabetes_binary_health_indicators_BRFSS2015.csv
+train.py                       # split, SMOTENC, CV, tuning, calibration, metrics
+main.py                        # FastAPI, inference, SHAP, counterfactual
+models/
+  model_rf.pkl
+  model_xgb.pkl
+  model_cnn1d.h5
+  scaler.pkl
+  shap_explainer.pkl
+  metrics.json
+tests/test_predict.py
+proposal.docx
+```
 
-## 🔌 Kontrak Endpoint
-
-- `GET /health` → status + daftar model termuat
-- `POST /api/predict` → diagnosis full (5 model + SHAP XAI), untuk hasil akhir & PDF
-- `POST /api/predict-lite` → 5 model tanpa SHAP, untuk slider What-If (<100ms)
-- `GET /api/metrics` → akurasi/precision/recall/F1 + confusion matrix (butuh `train.py` terbaru)
-- `GET /docs` → Swagger UI interaktif
+Semua keluaran adalah evaluasi internal berbasis pola data BRFSS. Sistem bukan diagnosis medis dan belum merupakan validasi klinis. Empat kondisi tambahan tetap bersifat preliminary.

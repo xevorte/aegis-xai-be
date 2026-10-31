@@ -2,6 +2,7 @@
 venv/
 .venv/
 __pycache__/
+_proposal_render/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
@@ -10,7 +11,11 @@ __pycache__/
 models/*.pkl
 models/*.h5
 models/metrics.json
+models/multi/
 !models/.gitkeep
+
+# Log lokal hasil train/server
+*.log
 
 # Data (dataset utama BRFSS diizinkan masuk repo, ~22MB)
 *.csv

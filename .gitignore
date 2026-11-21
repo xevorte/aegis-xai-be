@@ -26,3 +26,7 @@ models/multi/
 Thumbs.db
 .vscode/
 .idea/
+
+reports/
+scripts/
+models-b*/

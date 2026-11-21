@@ -15,7 +15,7 @@ python train.py
 python -m uvicorn main:app --reload --port 8000
 ```
 
-Training harus dijalankan ulang setelah perubahan metodologi. Proses menghasilkan artefak di `models/`, termasuk model terkalibrasi, scaler, explainer SHAP, dan `metrics.json`.
+Training harus dijalankan ulang setelah perubahan metodologi. Backend membangun explainer SHAP utama saat startup dari model XGBoost terkalibrasi dan background training yang deterministik; model, scaler, dan `metrics.json` tetap berasal dari artefak training.
 
 ## Protokol penelitian
 
@@ -50,7 +50,6 @@ models/
   model_xgb.pkl
   model_cnn1d.h5
   scaler.pkl
-  shap_explainer.pkl
   metrics.json
 tests/test_predict.py
 proposal.docx

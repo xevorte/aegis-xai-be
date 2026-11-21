@@ -10,6 +10,7 @@ import shap
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sklearn.model_selection import train_test_split
 import tensorflow as tf
 
 logger = logging.getLogger("aegis-be")
@@ -38,6 +39,60 @@ def _load_one(name: str, filename: str, loader):
         logger.warning("⚠️ Gagal memuat %s: %s", filename, e)
 
 
+class _CalibratedPermutationExplainer:
+    """Explain the calibrated XGBoost probability returned by the API."""
+
+    def __init__(self, model, background: pd.DataFrame):
+        self.model = model
+        self.explainer = shap.PermutationExplainer(
+            self._predict_positive_probability,
+            shap.maskers.Independent(background, max_samples=len(background)),
+            seed=42,
+        )
+
+    def _predict_positive_probability(self, values):
+        frame = pd.DataFrame(values, columns=FEATURE_NAMES)
+        return self.model.predict_proba(frame)[:, 1]
+
+    def __call__(self, input_df: pd.DataFrame):
+        return self.explainer(
+            input_df,
+            max_evals=(2 * len(FEATURE_NAMES) + 1) * 5,
+        )
+
+
+def _load_primary_shap_explainer():
+    """Build the XGBoost explainer from the existing model and training background."""
+    if "xgb" not in models:
+        logger.warning("Model XGBoost tidak tersedia, SHAP dilewati.")
+        return
+    dataset_path = BASE_DIR / "diabetes_binary_health_indicators_BRFSS2015.csv"
+    if not dataset_path.exists():
+        logger.warning("Dataset background SHAP tidak ditemukan: %s", dataset_path)
+        return
+    try:
+        data = pd.read_csv(dataset_path, usecols=FEATURE_NAMES + ["Diabetes_binary"])
+        indices = np.arange(len(data))
+        train_indices, _ = train_test_split(
+            indices,
+            test_size=0.30,
+            random_state=42,
+            stratify=data["Diabetes_binary"].astype(int),
+        )
+        background_indices, _ = train_test_split(
+            train_indices,
+            train_size=min(50, len(train_indices) - 1),
+            random_state=42,
+            stratify=data["Diabetes_binary"].iloc[train_indices].astype(int),
+        )
+        models["explainer"] = _CalibratedPermutationExplainer(
+            models["xgb"], data.loc[background_indices, FEATURE_NAMES].copy()
+        )
+        logger.info("✅ SHAP utama menggunakan probabilitas terkalibrasi XGBoost")
+    except Exception as e:
+        logger.warning("⚠️ Gagal membuat explainer XGBoost: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Loading model & scaler ke memori dari %s ...", MODELS_DIR)
@@ -45,8 +100,8 @@ async def lifespan(app: FastAPI):
     _load_one("rf", "model_rf.pkl", joblib.load)
     _load_one("xgb", "model_xgb.pkl", joblib.load)
     _load_one("cnn1d", "model_cnn1d.h5", tf.keras.models.load_model)
-    # SHAP explainer bersifat opsional: prediksi tetap jalan tanpanya
-    _load_one("explainer", "shap_explainer.pkl", joblib.load)
+    # SHAP utama menjelaskan probabilitas terkalibrasi dari model XGBoost.
+    _load_primary_shap_explainer()
     missing = {"scaler", "rf", "xgb", "cnn1d"} - models.keys()
     if missing:
         logger.warning("⚠️ Model belum lengkap, yang hilang: %s", sorted(missing))
@@ -416,7 +471,7 @@ def _compute_shap_generic(explainer, input_df: pd.DataFrame, feature_names: list
 
 
 def _compute_shap(input_df: pd.DataFrame):
-    """SHAP untuk model diabetes (explainer RF yang dipersist)."""
+    """SHAP untuk model diabetes (probabilitas terkalibrasi XGBoost)."""
     return _compute_shap_generic(models.get("explainer"), input_df, FEATURE_NAMES)
 
 
@@ -481,6 +536,7 @@ def predict_health_risk(payload: HealthScreeningInput):
             {"model_name": "1D-CNN (Deep Learning)", "risk_probability": round(probs["cnn1d"] * 100, 2), "prediction": "Berisiko" if probs["cnn1d"] >= decision_threshold else "Aman"}
         ],
         "explainable_ai": {
+            "xai_basis_model": METRIC_TO_DISPLAY.get("xgb", "Gradient Boosting (XGBoost)"),
             "top_contributing_features": feature_importance[:5],
             "narrative_recommendations": xai_sentences
         }
@@ -536,8 +592,8 @@ def get_metrics():
 def predict_best(payload: HealthScreeningInput):
     """Prediksi dengan satu model terbaik (dipilih train.py via validation PR-AUC).
 
-    Cocok untuk halaman utama FE. SHAP dihitung dari explainer Random Forest
-    (wakil analisis fitur), dinyatakan eksplisit di field xai_basis_model.
+    Cocok untuk halaman utama FE. SHAP menjelaskan probabilitas terkalibrasi
+    dari XGBoost, model terbaik berdasarkan PR-AUC validation.
     """
     _require_best_model()
     input_dict = payload.model_dump()
@@ -570,7 +626,7 @@ def predict_best(payload: HealthScreeningInput):
             "score_note": SCORE_NOTE,
         },
         "explainable_ai": {
-            "xai_basis_model": METRIC_TO_DISPLAY.get("rf", "Random Forest"),
+            "xai_basis_model": METRIC_TO_DISPLAY.get("xgb", "Gradient Boosting (XGBoost)"),
             "top_contributing_features": feature_importance[:5],
             "narrative_recommendations": xai_sentences,
         },
@@ -699,6 +755,7 @@ def _diabetes_condition_block(input_dict: dict, input_df: pd.DataFrame, input_sc
         "validated": False,
         "disclaimer": f"{DISCLAIMER_INTERNAL} {DISCLAIMER_BASE}",
         "explainable_ai": {
+            "xai_basis_model": METRIC_TO_DISPLAY.get("xgb", "Gradient Boosting (XGBoost)"),
             "top_contributing_features": feature_importance[:5],
             "narrative_recommendations": xai_sentences,
         },
